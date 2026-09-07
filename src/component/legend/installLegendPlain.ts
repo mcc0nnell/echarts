@@ -22,12 +22,14 @@ import LegendModel from './LegendModel';
 import LegendView from './LegendView';
 import { installLegendAction } from './legendAction';
 import { legendFilterStageHandler } from './legendFilter';
+import { legendLayoutStageHandler } from './legendLayout';
 
 export function install(registers: EChartsExtensionInstallRegisters) {
     registers.registerComponentModel(LegendModel);
     registers.registerComponentView(LegendView);
 
     registers.registerProcessor(registers.PRIORITY.PROCESSOR.SERIES_FILTER, legendFilterStageHandler);
+    registers.registerProcessor(registers.PRIORITY.PROCESSOR.FILTER, legendLayoutStageHandler);
     registers.registerSubTypeDefaulter('legend', function () {
         return 'plain';
     });
