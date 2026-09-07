@@ -82,6 +82,7 @@ import {
 } from '../scaleRawExtentInfo';
 import { hasBreaks } from '../../scale/break';
 import { associateSeriesWithAxis } from '../axisStatistics';
+import { getComponentLayoutInfo } from '../../util/componentLayout';
 
 
 type Cartesian2DDimensionName = 'x' | 'y';
@@ -223,6 +224,11 @@ class Grid implements CoordinateSystemMaster {
         updateAllAxisExtentTransByGridRect(axesMap, gridRect);
 
         if (!beforeDataProcessing) {
+            if (optionContainLabel && shouldAutoAvoidComponentOverlap(gridModel)) {
+                constrainRectByComponentLayouts(gridRect, gridModel);
+                updateAllAxisExtentTransByGridRect(axesMap, gridRect);
+            }
+
             const axisBuilderSharedCtx = createAxisBiulders(gridRect, coordsList, axesMap, optionContainLabel, api);
 
             let noPxChange: boolean;
@@ -1013,6 +1019,7 @@ function prepareOuterBounds(
         outerBoundsRect = getLayoutRect(
             gridModel.get('outerBounds', true) || OUTER_BOUNDS_DEFAULT, layoutRef.refContainer
         );
+        constrainRectByComponentLayouts(outerBoundsRect, gridModel);
     }
     else if (optionOuterBoundsMode !== 'none') {
         if (__DEV__) {
@@ -1045,6 +1052,69 @@ function prepareOuterBounds(
     ];
 
     return {outerBoundsRect, parsedOuterBoundsContain, outerBoundsClamp};
+}
+
+function shouldAutoAvoidComponentOverlap(gridModel: GridModel): boolean {
+    const outerBoundsMode = gridModel.get('outerBoundsMode', true);
+    return outerBoundsMode == null || outerBoundsMode === 'auto';
+}
+
+function constrainRectByComponentLayouts(rect: BoundingRect, gridModel: GridModel): void {
+    gridModel.ecModel.eachComponent('legend', componentModel => {
+        const layoutInfo = getComponentLayoutInfo(componentModel);
+        if (!layoutInfo
+            || indexOf(layoutInfo.relatedCoordSysModelUids, gridModel.uid) < 0
+        ) {
+            return;
+        }
+
+        const occupiedRect = layoutInfo.rect;
+        const rectRight = rect.x + rect.width;
+        const rectBottom = rect.y + rect.height;
+        const occupiedRight = occupiedRect.x + occupiedRect.width;
+        const occupiedBottom = occupiedRect.y + occupiedRect.height;
+        const overlapsX = occupiedRect.x < rectRight && occupiedRight > rect.x;
+        const overlapsY = occupiedRect.y < rectBottom && occupiedBottom > rect.y;
+
+        if ((layoutInfo.avoidSide === 'top' || layoutInfo.avoidSide === 'bottom') && !overlapsX
+            || (layoutInfo.avoidSide === 'left' || layoutInfo.avoidSide === 'right') && !overlapsY
+        ) {
+            return;
+        }
+
+        switch (layoutInfo.avoidSide) {
+            case 'top': {
+                const nextTop = Math.min(rectBottom, occupiedBottom);
+                if (nextTop > rect.y) {
+                    rect.height = Math.max(0, rectBottom - nextTop);
+                    rect.y = nextTop;
+                }
+                break;
+            }
+            case 'right': {
+                const nextRight = Math.max(rect.x, occupiedRect.x);
+                if (nextRight < rectRight) {
+                    rect.width = Math.max(0, nextRight - rect.x);
+                }
+                break;
+            }
+            case 'bottom': {
+                const nextBottom = Math.max(rect.y, occupiedRect.y);
+                if (nextBottom < rectBottom) {
+                    rect.height = Math.max(0, nextBottom - rect.y);
+                }
+                break;
+            }
+            case 'left': {
+                const nextLeft = Math.min(rectRight, occupiedRight);
+                if (nextLeft > rect.x) {
+                    rect.width = Math.max(0, rectRight - nextLeft);
+                    rect.x = nextLeft;
+                }
+                break;
+            }
+        }
+    });
 }
 
 const resolveAxisNameOverlapForGrid: AxisBuilderSharedContext['resolveAxisNameOverlap'] = (
